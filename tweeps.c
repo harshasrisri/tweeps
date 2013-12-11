@@ -13,6 +13,7 @@
 #endif
 
 #define DBG(str) if (DEBUG) fprintf (stderr, "Debug | %s : %s\n", __func__, (str))
+
 /*
 struct word_struct {
 	char *word;
@@ -59,7 +60,7 @@ struct node *init_node () {
 	return node;
 }
 
-void insert (struct node *node, char *word) {
+void insert (struct node *node, char *word, char location) {
 
 	if (!*word) {
 		if (!WS) {
@@ -70,7 +71,7 @@ void insert (struct node *node, char *word) {
 		return;
 	}
 
-	key = word[0] - 'a';
+	key = word[0] - '0';
 
 	if (!Children[key])
 		Children[key] = init_node ();
@@ -98,11 +99,12 @@ int main (int argc, char **argv) {
 		while (fgets (line, 50, stdin)) {
 			* (char *) (strchr (line, '\n')) = '\0';
 
-			i++;
-			if (i >= numtasks) i = 1;
+			/* i++; */
+			/* if (i >= numtasks) i = 1; */
 
-			/* printf ("To %d : Sending %s\n", i, line); */
-			MPI_Send (line, 50, MPI_UNSIGNED_CHAR, i, 0, MPI_COMM_WORLD);
+			/* destination task ID is the first digit of the source in each line. */
+			dest = line[0] - '0';
+			MPI_Send (line, 50, MPI_UNSIGNED_CHAR, dest, 0, MPI_COMM_WORLD);
 		}
 
 		for (i = 1; i < numtasks; i++)
@@ -127,8 +129,8 @@ int main (int argc, char **argv) {
 			sscanf (line, "%s %s", src_node, dst_node);
 			fprintf (fp[taskid], "%10s -> %10s\n", src_node, dst_node);
 
-			/* insert (node_head, name = src_node); */
-			/* insert (node_head, name = dst_node); */
+			/* insert (node_head, name = src_node, "s"); */
+			/* insert (node_head, name = dst_node, "d"); */
 		}
 	}
 
