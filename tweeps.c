@@ -6,7 +6,8 @@
 #define Children (node->children)
 #define WS (node->ws)
 #define Word (node->ws->word)
-#define WC (node->ws->count)
+#define IC (node->ws->incoming)
+#define OG (node->ws->outgoing)
 
 #ifndef DEBUG
 #define DEBUG 0
@@ -14,33 +15,34 @@
 
 #define DBG(str) if (DEBUG) fprintf (stderr, "Debug | %s : %s\n", __func__, (str))
 
-/*
 struct word_struct {
 	char *word;
-	int count;
-	int src_id;
-	int dst_id;
+	int incoming;
+	int outgoing;
 };
 
 struct node {
-	struct node *children[26];
+	struct node *children[10];
 	struct word_struct *ws;
 };
 
 struct node *node_head;
 int key;
 char *name;
+int numtasks, taskid;
+FILE *fp[10];
+
 
 void print (struct node *node) {
 	int i;
 
 	if (WS) {
-		printf ("%s %d\n", Word, WC);
+		fprintf (fp[taskid], "%s %d %d\n", Word, IC, OG);
 		free (Word);
 		free (WS);
 	}
 
-	for (i = 0; i < 26; i++)
+	for (i = 0; i < 10; i++)
 		if (Children[i])
 			print (Children[i]);
 
@@ -54,20 +56,25 @@ struct node *init_node () {
 	node = (struct node *) malloc (sizeof (struct node));
 	WS = NULL;
 
-	for (i = 0; i < 26; i++)
+	for (i = 0; i < 10; i++)
 		Children[i] = NULL;
 
 	return node;
 }
 
-void insert (struct node *node, char *word, char location) {
+void insert (struct node *node, char *word, int location) {
 
 	if (!*word) {
 		if (!WS) {
 			WS = (struct word_struct *) malloc (sizeof (struct word_struct));
 			Word = strdup (name);
+			IC = OG = 0;
 		}
-		WC++;
+		if (location)
+			IC++;
+		else
+			OG++;
+		fprintf (fp[taskid], "Inserted %s as %s\n", Word, location ? "incoming" : "outgoing");
 		return;
 	}
 
@@ -76,11 +83,8 @@ void insert (struct node *node, char *word, char location) {
 	if (!Children[key])
 		Children[key] = init_node ();
 
-	insert (Children[key], &word[1]);
+	insert (Children[key], &word[1], location);
 }
-*/
-
-int numtasks, taskid;
 
 int main (int argc, char **argv) {
 	char src_node[20], dst_node[20], line[50];
@@ -92,7 +96,6 @@ int main (int argc, char **argv) {
 	MPI_Comm_size(MPI_COMM_WORLD, &numtasks);
 	MPI_Comm_rank(MPI_COMM_WORLD,&taskid);
 
-	FILE *fp[numtasks];
 
 	/* MASTER */
 	if (!taskid) {
@@ -112,7 +115,7 @@ int main (int argc, char **argv) {
 	}
 	/* SLAVES */
 	else {
-		/* node_head = init_node (); */
+		node_head = init_node ();
 		char filename[10];
 		sprintf (filename, "task_%d", taskid);
 		fp[taskid] = fopen (filename, "w");
@@ -127,11 +130,13 @@ int main (int argc, char **argv) {
 			}
 
 			sscanf (line, "%s %s", src_node, dst_node);
-			fprintf (fp[taskid], "%10s -> %10s\n", src_node, dst_node);
+			/* fprintf (fp[taskid], "%10s -> %10s\n", src_node, dst_node); */
 
-			/* insert (node_head, name = src_node, "s"); */
-			/* insert (node_head, name = dst_node, "d"); */
+			insert (node_head, name = src_node, 0);
+			insert (node_head, name = dst_node, 1);
 		}
+
+		/* print (node_head); */
 	}
 
 	MPI_Finalize();
