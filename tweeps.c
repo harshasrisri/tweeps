@@ -19,7 +19,7 @@
 #define DEBUG 0
 #endif
 
-#define F_ERR(fmt, ...) do {fprintf (FERR, "%d:%s(): " fmt, __LINE__, __FILE__, __VA_ARGS__);} while (0)
+#define F_ERR(fmt, ...) do {fprintf (FERR, fmt, __VA_ARGS__);} while (0)
 #define F_OUT(fmt, ...) do {fprintf (FOUT, fmt, __VA_ARGS__);} while (0)
 
 struct user_info {
@@ -48,20 +48,30 @@ int numtasks, taskid;
 
 int print_count = 0;
 
-void print (struct node *node) {
+void free_trie (struct node *node) {
 	int i;
 	
 	if (UInfo) {
-		F_OUT ("%s %d %d\n", UID, Followers, Following);
 		free (UID);
 		free (UInfo);
 	}
 
 	for (i = 0; i < 10; i++)
 		if (Children[i])
-			print (Children[i]);
+			free_trie (Children[i]);
 
 	free (node);
+}
+
+void print_trie (struct node *node) {
+	int i;
+	
+	if (UInfo)
+		F_OUT ("%s %d %d\n", UID, Followers, Following);
+
+	for (i = 0; i < 10; i++)
+		if (Children[i])
+			print_trie (Children[i]);
 }
 
 struct node *init_node () {
@@ -89,7 +99,7 @@ struct node *insert (struct node *node, char *userid, int location) {
 			Followers++;
 		else
 			Following++;
-		/* F_OUT ("Inserted %s as %s in task %d\n", UID, location ? "destination" : "source", taskid); */
+		F_ERR ("Inserted %s as %s in task %d\n", UID, location ? "destination" : "source", taskid);
 		return node;
 	}
 
@@ -98,7 +108,7 @@ struct node *insert (struct node *node, char *userid, int location) {
 	if (!Children[key])
 		Children[key] = init_node ();
 
-	/* F_OUT ("%s -> ", userid); */
+	F_ERR ("%s -> ", userid);
 	Children[key] = insert (Children[key], &userid[1], location);
 	return node;
 }
@@ -119,10 +129,11 @@ void task_init () {
 }
 
 void task_close () {
+	print_trie (Head);
 	fflush (FOUT); fflush (FOUT);
 	fclose (FERR); fclose (FERR);
-	/* release_node (HEAD); */
-	/* free (task); */
+	free_trie (Head);
+	free (task);
 }
 
 void dispatch_input () {
@@ -159,7 +170,6 @@ void receive_input () {
 		Head = insert (Head, name = src_node, 0);
 		Head = insert (Head, name = dst_node, 1);
 	}
-	print (Head);
 }
 
 int main (int argc, char **argv) {
