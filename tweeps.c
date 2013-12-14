@@ -153,8 +153,8 @@ void task_init () {
 /* Function to close and clean up a task */
 void task_close () {
 	print_trie (Head);
-	fflush (FOUT); fflush (FOUT);
-	fclose (FERR); fclose (FERR);
+	fflush (FOUT); fflush (FERR);
+	fclose (FOUT); fclose (FERR);
 	free_trie (Head);
 	Free (task);
 }
