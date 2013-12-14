@@ -4,42 +4,57 @@
 #include "mpi.h"
 
 #define Children (node->children)
-#define WS (node->ws)
-#define Word (node->ws->word)
-#define IC (node->ws->incoming)
-#define OG (node->ws->outgoing)
+#define UInfo (node->uinfo)
+
+#define UID (node->uinfo->userid)
+#define Followers (node->uinfo->followers)
+#define Following (node->uinfo->following)
+
+#define ID (task->id)
+#define Head (task->node_head)
+#define FOUT (task->fp_out)
+#define FERR (task->fp_err)
 
 #ifndef DEBUG
 #define DEBUG 0
 #endif
 
-#define DBG(str) if (DEBUG) fprintf (stderr, "Debug | %s : %s\n", __func__, (str))
+#define F_ERR(fmt, ...) do {fprintf (FERR, "%d:%s(): " fmt, __LINE__, __FILE__, __VA_ARGS__);} while (0)
+#define F_OUT(fmt, ...) do {fprintf (FOUT, fmt, __VA_ARGS__);} while (0)
 
-struct word_struct {
-	char *word;
-	int incoming;
-	int outgoing;
+struct user_info {
+	char *userid;
+	int followers;
+	int following;
 };
 
 struct node {
 	struct node *children[10];
-	struct word_struct *ws;
+	struct user_info *uinfo;
 };
 
-struct node *node_head;
+struct task {
+	int id;
+	struct node *node_head;
+	FILE *fp_out;
+	FILE *fp_err;
+};
+
+struct task *task;
+
 int key;
 char *name;
 int numtasks, taskid;
-FILE *fp[10];
 
+int print_count = 0;
 
 void print (struct node *node) {
 	int i;
-
-	if (WS) {
-		fprintf (fp[taskid], "%s %d %d\n", Word, IC, OG);
-		free (Word);
-		free (WS);
+	
+	if (UInfo) {
+		F_OUT ("%s %d %d\n", UID, Followers, Following);
+		free (UID);
+		free (UInfo);
 	}
 
 	for (i = 0; i < 10; i++)
@@ -54,7 +69,7 @@ struct node *init_node () {
 	struct node *node;
 
 	node = (struct node *) malloc (sizeof (struct node));
-	WS = NULL;
+	UInfo = NULL;
 
 	for (i = 0; i < 10; i++)
 		Children[i] = NULL;
@@ -62,83 +77,111 @@ struct node *init_node () {
 	return node;
 }
 
-void insert (struct node *node, char *word, int location) {
+struct node *insert (struct node *node, char *userid, int location) {
 
-	if (!*word) {
-		if (!WS) {
-			WS = (struct word_struct *) malloc (sizeof (struct word_struct));
-			Word = strdup (name);
-			IC = OG = 0;
+	if (!*userid) {
+		if (!UInfo) {
+			UInfo = (struct user_info *) malloc (sizeof (struct user_info));
+			UID = strdup (name);
+			Followers = Following = 0;
 		}
 		if (location)
-			IC++;
+			Followers++;
 		else
-			OG++;
-		fprintf (fp[taskid], "Inserted %s as %s in task %d\n", Word, location ? "destination" : "source", taskid);
-		return;
+			Following++;
+		/* F_OUT ("Inserted %s as %s in task %d\n", UID, location ? "destination" : "source", taskid); */
+		return node;
 	}
 
-	key = word[0] - '0';
+	key = userid[0] - '0';
 
 	if (!Children[key])
 		Children[key] = init_node ();
 
-	fprintf (fp[taskid], "%s -> ", word);
-	insert (Children[key], &word[1], location);
+	/* F_OUT ("%s -> ", userid); */
+	Children[key] = insert (Children[key], &userid[1], location);
+	return node;
+}
+
+void task_init () {
+	char filename[10];
+
+	task = (struct task *) malloc (sizeof (struct task));
+
+	ID = taskid;
+	Head = init_node ();
+
+	sprintf (filename, "%d.stdout", taskid);
+	FOUT = fopen (filename, "w");
+
+	sprintf (filename, "%d.stderr", taskid);
+	FERR = fopen (filename, "w");
+}
+
+void task_close () {
+	fflush (FOUT); fflush (FOUT);
+	fclose (FERR); fclose (FERR);
+	/* release_node (HEAD); */
+	/* free (task); */
+}
+
+void dispatch_input () {
+	int i, dest;
+	char line[50];
+
+	while (fgets (line, 50, stdin)) {
+		* (char *) (strchr (line, '\n')) = '\0';
+
+		/* destination task ID is the first digit of the source in each line. */
+		for (i = 0; line[i] == '0'; i++) {}	// Find the first non-zero digit
+		dest = line[i] - '0'; 				// dest taskid is the 1st digit
+		dest = dest % (numtasks - 1) + 1; 	// Adjust dest taskid for fewer threads
+
+		MPI_Send (line, 50, MPI_UNSIGNED_CHAR, dest, 0, MPI_COMM_WORLD);
+	}
+
+	for (i = 1; i < numtasks; i++) 			// Mark end of transmission with a blank string
+		MPI_Send ("", 50, MPI_UNSIGNED_CHAR, i, 0, MPI_COMM_WORLD);
+}
+
+void receive_input () {
+	MPI_Status status;
+
+	char src_node[20], dst_node[20], line[50];
+
+	while (1) { 		// loop till inputs are exhausted and break afterwards
+		MPI_Recv (line, 50, MPI_UNSIGNED_CHAR, 0, 0, MPI_COMM_WORLD, &status);
+
+		if (!line[0]) break; // break when you get a blank line
+
+		sscanf (line, "%s %s", src_node, dst_node);
+
+		Head = insert (Head, name = src_node, 0);
+		Head = insert (Head, name = dst_node, 1);
+	}
+	print (Head);
 }
 
 int main (int argc, char **argv) {
-	char src_node[20], dst_node[20], line[50];
-	MPI_Status status;
-	int rc, dest, i = 0, j, tag = 0;
 
 	/***** Initializations *****/
 	MPI_Init(&argc, &argv);
 	MPI_Comm_size(MPI_COMM_WORLD, &numtasks);
 	MPI_Comm_rank(MPI_COMM_WORLD,&taskid);
 
+	task_init ();
 
 	/* MASTER */
 	if (!taskid) {
-		while (fgets (line, 50, stdin)) {
-			* (char *) (strchr (line, '\n')) = '\0';
-
-			/* destination task ID is the first digit of the source in each line. */
-			for (i = 0; line[i] == '0'; i++)
-				;
-			dest = line[i] - '0';
-
-			MPI_Send (line, 50, MPI_UNSIGNED_CHAR, dest, 0, MPI_COMM_WORLD);
-		}
-
-		for (i = 1; i < numtasks; i++)
-			MPI_Send ("", 50, MPI_UNSIGNED_CHAR, i, 0, MPI_COMM_WORLD);
+		dispatch_input ();
 	}
+
 	/* SLAVES */
 	else {
-		node_head = init_node ();
-		char filename[10];
-		sprintf (filename, "task_%d", taskid);
-		fp[taskid] = fopen (filename, "w");
-
-		while (1) {
-			MPI_Recv (line, 50, MPI_UNSIGNED_CHAR, 0, 0, MPI_COMM_WORLD, &status);
-
-			if (!line[0]) {
-				fflush (fp[taskid]);
-				fclose (fp[taskid]);
-				break;
-			}
-
-			sscanf (line, "%s %s", src_node, dst_node);
-
-			insert (node_head, name = src_node, 0);
-			insert (node_head, name = dst_node, 1);
-		}
-
+		receive_input ();
 	}
 
+	task_close ();
 	MPI_Finalize();
-
 	return 0;
 }
