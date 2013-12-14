@@ -11,6 +11,7 @@
 #define Following (node->uinfo->following)
 
 #define ID (task->id)
+#define Count (task->count)
 #define Head (task->node_head)
 #define FOUT (task->fp_out)
 #define FERR (task->fp_err)
@@ -35,6 +36,7 @@ struct node {
 /* Data structure to hold all entities related to a task */
 struct task {
 	int id;
+	int count;
 	struct node *node_head;
 	FILE *fp_out;
 	FILE *fp_err;
@@ -141,6 +143,7 @@ void task_init () {
 	task = (struct task *) malloc (sizeof (struct task));
 
 	ID = taskid;
+	Count = 0;
 	Head = init_node ();
 
 	sprintf (filename, "%d.stdout", taskid);
@@ -153,6 +156,7 @@ void task_init () {
 /* Function to close and clean up a task */
 void task_close () {
 	print_trie (Head);
+	F_OUT ("No. of connections : %d\n", Count);
 	fflush (FOUT); fflush (FERR);
 	fclose (FOUT); fclose (FERR);
 	free_trie (Head);
@@ -189,6 +193,7 @@ void receive_input () {
 		if (!line[0]) break; // break when you get a blank line
 
 		sscanf (line, "%s %s", src_node, dst_node);
+		Count++;
 
 		Head = insert (Head, name = src_node, FOLLOWER);
 		Head = insert (Head, name = dst_node, FOLLOWING);
