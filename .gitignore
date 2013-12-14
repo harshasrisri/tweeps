@@ -3,3 +3,5 @@ tweeps.o*
 tweeps
 qsub*
 task_*
+*.std*
+*core*

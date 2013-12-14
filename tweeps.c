@@ -15,10 +15,7 @@
 #define FOUT (task->fp_out)
 #define FERR (task->fp_err)
 
-#ifndef DEBUG
-#define DEBUG 0
-#endif
-
+#define Free(x) if(x) free(x)
 #define F_ERR(fmt, ...) do {fprintf (FERR, fmt, __VA_ARGS__);} while (0)
 #define F_OUT(fmt, ...) do {fprintf (FOUT, fmt, __VA_ARGS__);} while (0)
 
@@ -52,15 +49,15 @@ void free_trie (struct node *node) {
 	int i;
 	
 	if (UInfo) {
-		free (UID);
-		free (UInfo);
+		Free (UID);
+		Free (UInfo);
 	}
 
 	for (i = 0; i < 10; i++)
 		if (Children[i])
 			free_trie (Children[i]);
 
-	free (node);
+	Free (node);
 }
 
 void print_trie (struct node *node) {
@@ -133,7 +130,7 @@ void task_close () {
 	fflush (FOUT); fflush (FOUT);
 	fclose (FERR); fclose (FERR);
 	free_trie (Head);
-	free (task);
+	Free (task);
 }
 
 void dispatch_input () {
