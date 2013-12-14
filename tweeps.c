@@ -74,7 +74,7 @@ void insert (struct node *node, char *word, int location) {
 			IC++;
 		else
 			OG++;
-		fprintf (fp[taskid], "Inserted %s as %s\n", Word, location ? "incoming" : "outgoing");
+		fprintf (fp[taskid], "Inserted %s as %s in task %d\n", Word, location ? "destination" : "source", taskid);
 		return;
 	}
 
@@ -83,13 +83,14 @@ void insert (struct node *node, char *word, int location) {
 	if (!Children[key])
 		Children[key] = init_node ();
 
+	fprintf (fp[taskid], "%s -> ", word);
 	insert (Children[key], &word[1], location);
 }
 
 int main (int argc, char **argv) {
 	char src_node[20], dst_node[20], line[50];
 	MPI_Status status;
-	int rc, dest, i = 0, j, tag;
+	int rc, dest, i = 0, j, tag = 0;
 
 	/***** Initializations *****/
 	MPI_Init(&argc, &argv);
@@ -102,11 +103,11 @@ int main (int argc, char **argv) {
 		while (fgets (line, 50, stdin)) {
 			* (char *) (strchr (line, '\n')) = '\0';
 
-			/* i++; */
-			/* if (i >= numtasks) i = 1; */
-
 			/* destination task ID is the first digit of the source in each line. */
-			dest = line[0] - '0';
+			for (i = 0; line[i] == '0'; i++)
+				;
+			dest = line[i] - '0';
+
 			MPI_Send (line, 50, MPI_UNSIGNED_CHAR, dest, 0, MPI_COMM_WORLD);
 		}
 
@@ -130,14 +131,14 @@ int main (int argc, char **argv) {
 			}
 
 			sscanf (line, "%s %s", src_node, dst_node);
-			/* fprintf (fp[taskid], "%10s -> %10s\n", src_node, dst_node); */
 
 			insert (node_head, name = src_node, 0);
 			insert (node_head, name = dst_node, 1);
 		}
 
-		/* print (node_head); */
 	}
 
 	MPI_Finalize();
+
+	return 0;
 }
