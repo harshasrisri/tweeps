@@ -19,17 +19,20 @@
 #define F_ERR(fmt, ...) do {fprintf (FERR, fmt, __VA_ARGS__);} while (0)
 #define F_OUT(fmt, ...) do {fprintf (FOUT, fmt, __VA_ARGS__);} while (0)
 
+/* Data structure to hold a user's information */
 struct user_info {
 	char *userid;
 	int followers;
 	int following;
 };
 
+/* Data structure for a TRIE */
 struct node {
 	struct node *children[10];
 	struct user_info *uinfo;
 };
 
+/* Data structure to hold all entities related to a task */
 struct task {
 	int id;
 	struct node *node_head;
@@ -39,12 +42,17 @@ struct task {
 
 struct task *task;
 
-int key;
-char *name;
+int key; 		// The index of the array of children in each trie node
+char *name; 	// Global reference to the node being entered into the trie
+
+/* MPI variables */
 int numtasks, taskid;
+MPI_Status status;
 
-int print_count = 0;
+/* Identifying if a node is following or followed by */
+enum { FOLLOWER, FOLLOWING };
 
+/* Recursive Function to free all the nodes in a TRIE */
 void free_trie (struct node *node) {
 	int i;
 	
@@ -60,6 +68,7 @@ void free_trie (struct node *node) {
 	Free (node);
 }
 
+/* Recursive Function to print the nodes of a TRIE in in-order fashion */
 void print_trie (struct node *node) {
 	int i;
 	
@@ -71,6 +80,7 @@ void print_trie (struct node *node) {
 			print_trie (Children[i]);
 }
 
+/* Function to initialize the elements of a node of a TRIE sanely */
 struct node *init_node () {
 	int i;
 	struct node *node;
@@ -84,19 +94,30 @@ struct node *init_node () {
 	return node;
 }
 
-struct node *insert (struct node *node, char *userid, int location) {
+/* Function to insert an element into a TRIE */
+struct node *insert (struct node *node, char *userid, int connection) {
 
-	if (!*userid) {
-		if (!UInfo) {
+	if (!*userid) { 		// Reached end of string. let's add it to the TRIE
+		if (!UInfo) { 		// If the user info was not there already, create it
 			UInfo = (struct user_info *) malloc (sizeof (struct user_info));
 			UID = strdup (name);
 			Followers = Following = 0;
 		}
-		if (location)
-			Followers++;
-		else
-			Following++;
-		F_ERR ("Inserted %s as %s in task %d\n", UID, location ? "destination" : "source", taskid);
+		/* If it is a master process, then we gather all the info */
+		if (!ID) {
+			/* Followers += gBufNode.followers; */
+			/* Following += gBufNode.following; */
+		}
+		/* If it is a slave process, we keep count of individual's statistics */
+		else {
+			if (connection)
+				Followers++;
+			else
+				Following++;
+		}
+#if 0
+		F_ERR ("Inserted %s as %s in task %d\n", UID, connection ? "destination" : "source", taskid); */
+#endif
 		return node;
 	}
 
@@ -105,11 +126,15 @@ struct node *insert (struct node *node, char *userid, int location) {
 	if (!Children[key])
 		Children[key] = init_node ();
 
+#if 0
 	F_ERR ("%s -> ", userid);
-	Children[key] = insert (Children[key], &userid[1], location);
+#endif
+
+	Children[key] = insert (Children[key], &userid[1], connection);
 	return node;
 }
 
+/* Function to initialize all data used in this particular task */
 void task_init () {
 	char filename[10];
 
@@ -125,6 +150,7 @@ void task_init () {
 	FERR = fopen (filename, "w");
 }
 
+/* Function to close and clean up a task */
 void task_close () {
 	print_trie (Head);
 	fflush (FOUT); fflush (FOUT);
@@ -133,6 +159,7 @@ void task_close () {
 	Free (task);
 }
 
+/* Read input from the STDIN and dispatch it to all the other tasks in MPI_COMM_WORLD */
 void dispatch_input () {
 	int i, dest;
 	char line[50];
@@ -152,9 +179,8 @@ void dispatch_input () {
 		MPI_Send ("", 50, MPI_UNSIGNED_CHAR, i, 0, MPI_COMM_WORLD);
 }
 
+/* Function used by slave task to receive input from Master */
 void receive_input () {
-	MPI_Status status;
-
 	char src_node[20], dst_node[20], line[50];
 
 	while (1) { 		// loop till inputs are exhausted and break afterwards
@@ -164,17 +190,18 @@ void receive_input () {
 
 		sscanf (line, "%s %s", src_node, dst_node);
 
-		Head = insert (Head, name = src_node, 0);
-		Head = insert (Head, name = dst_node, 1);
+		Head = insert (Head, name = src_node, FOLLOWER);
+		Head = insert (Head, name = dst_node, FOLLOWING);
 	}
 }
 
+/* And so it begins... */
 int main (int argc, char **argv) {
 
 	/***** Initializations *****/
-	MPI_Init(&argc, &argv);
-	MPI_Comm_size(MPI_COMM_WORLD, &numtasks);
-	MPI_Comm_rank(MPI_COMM_WORLD,&taskid);
+	MPI_Init (&argc, &argv);
+	MPI_Comm_size (MPI_COMM_WORLD, &numtasks);
+	MPI_Comm_rank (MPI_COMM_WORLD, &taskid);
 
 	task_init ();
 
@@ -189,6 +216,6 @@ int main (int argc, char **argv) {
 	}
 
 	task_close ();
-	MPI_Finalize();
+	MPI_Finalize ();
 	return 0;
 }
