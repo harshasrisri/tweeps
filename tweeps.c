@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "mpi.h"
 
 #define Children (node->children)
@@ -52,7 +53,7 @@ int numtasks, taskid;
 MPI_Status status;
 
 /* Identifying if a node is following or followed by */
-enum { FOLLOWER, FOLLOWING };
+enum { FOLLOWER, FOLLOWING, GATHER };
 
 /* Recursive Function to free all the nodes in a TRIE */
 void free_trie (struct node *node) {
@@ -74,8 +75,9 @@ void free_trie (struct node *node) {
 void print_trie (struct node *node) {
 	int i;
 	
-	if (UInfo)
+	if (UInfo) {
 		F_OUT ("%s %d %d\n", UID, Followers, Following);
+	}
 
 	for (i = 0; i < 10; i++)
 		if (Children[i])
@@ -96,6 +98,9 @@ struct node *init_node () {
 	return node;
 }
 
+/* node to collect incoming node data at the master */
+struct user_info gRxUInfo;
+
 /* Function to insert an element into a TRIE */
 struct node *insert (struct node *node, char *userid, int connection) {
 
@@ -107,8 +112,8 @@ struct node *insert (struct node *node, char *userid, int connection) {
 		}
 		/* If it is a master process, then we gather all the info */
 		if (!ID) {
-			/* Followers += gBufNode.followers; */
-			/* Following += gBufNode.following; */
+			Followers += gRxUInfo.followers;
+			Following += gRxUInfo.following;
 		}
 		/* If it is a slave process, we keep count of individual's statistics */
 		else {
@@ -117,9 +122,6 @@ struct node *insert (struct node *node, char *userid, int connection) {
 			else
 				Following++;
 		}
-#if 0
-		F_ERR ("Inserted %s as %s in task %d\n", UID, connection ? "destination" : "source", taskid); */
-#endif
 		return node;
 	}
 
@@ -127,10 +129,6 @@ struct node *insert (struct node *node, char *userid, int connection) {
 
 	if (!Children[key])
 		Children[key] = init_node ();
-
-#if 0
-	F_ERR ("%s -> ", userid);
-#endif
 
 	Children[key] = insert (Children[key], &userid[1], connection);
 	return node;
@@ -156,7 +154,6 @@ void task_init () {
 /* Function to close and clean up a task */
 void task_close () {
 	print_trie (Head);
-	F_OUT ("No. of connections : %d\n", Count);
 	fflush (FOUT); fflush (FERR);
 	fclose (FOUT); fclose (FERR);
 	free_trie (Head);
@@ -174,7 +171,7 @@ void dispatch_input () {
 		/* destination task ID is the first digit of the source in each line. */
 		for (i = 0; line[i] == '0'; i++) {}	// Find the first non-zero digit
 		dest = line[i] - '0'; 				// dest taskid is the 1st digit
-		dest = dest % (numtasks - 1) + 1; 	// Adjust dest taskid for fewer threads
+		/* dest = dest % (numtasks - 1) + 1; 	// Adjust dest taskid for fewer threads */
 
 		MPI_Send (line, 50, MPI_UNSIGNED_CHAR, dest, 0, MPI_COMM_WORLD);
 	}
@@ -200,6 +197,65 @@ void receive_input () {
 	}
 }
 
+/* Recursive function to send task data to master */
+char output[50];
+void send_output (struct node *node) {
+	int i;
+	
+	if (UInfo) {
+		sprintf (output, "%s %d %d", UID, Followers, Following);
+		MPI_Send (output, 50, MPI_UNSIGNED_CHAR, 0, 0, MPI_COMM_WORLD);
+	}
+
+	for (i = 0; i < 10; i++)
+		if (Children[i])
+			send_output (Children[i]);
+}
+
+/* Function to gather data at master from all nodes */
+int *done = 0;
+int all_done () {
+	int i, finished = 1;
+
+	if (!done) done = (int *) calloc (numtasks, sizeof (int));
+
+	for (i = 1; finished && (i < numtasks); i++)
+		finished &= done[i];
+
+	return finished;
+}
+
+#define IS_DONE(i) done[i]
+#define DONE(i) (done[i] = 1)
+
+void receive_output () {
+	int i;
+	Head = init_node ();
+
+	/* Allocating space in buffer structure to hold names of incoming connections */
+	gRxUInfo.userid = (char *) malloc (20);
+
+	while (!all_done()) {
+		for (i = 1; i < 10; i++) {
+			if (IS_DONE(i)) continue;
+
+			MPI_Recv (output, 50, MPI_UNSIGNED_CHAR, i, 0, MPI_COMM_WORLD, &status);
+
+			if (!output[0]) {
+				DONE(i);
+				continue;
+			}
+
+			Count++;
+
+			sscanf (output, "%s %d %d", gRxUInfo.userid, &gRxUInfo.followers, &gRxUInfo.following);
+
+			Head = insert (Head, name = gRxUInfo.userid, GATHER);
+		}
+	}
+
+}
+
 /* And so it begins... */
 int main (int argc, char **argv) {
 
@@ -210,14 +266,21 @@ int main (int argc, char **argv) {
 
 	task_init ();
 
+	/* printf ("PID of task %d : %d\n", ID, getpid()); */
+
 	/* MASTER */
 	if (!taskid) {
 		dispatch_input ();
+		receive_output ();
 	}
 
 	/* SLAVES */
 	else {
 		receive_input ();
+		send_output (Head);
+		/* Send Blank Line to mark end of transmission */
+		MPI_Send ("", 50, MPI_UNSIGNED_CHAR, 0, 0, MPI_COMM_WORLD);
+		/* printf ("Done sending output from task %d\n", ID); */
 	}
 
 	task_close ();
