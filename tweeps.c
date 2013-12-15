@@ -52,7 +52,7 @@ int numtasks, taskid;
 MPI_Status status;
 
 /* Identifying if a node is following or followed by */
-enum { FOLLOWER, FOLLOWING, GATHER };
+enum { FOLLOWER, FOLLOWING };
 
 /* Recursive Function to free all the nodes in a TRIE */
 void free_trie (struct node *node) {
@@ -74,9 +74,8 @@ void free_trie (struct node *node) {
 void print_trie (struct node *node) {
 	int i;
 	
-	if (UInfo) {
+	if (UInfo)
 		F_OUT ("%s %d %d\n", UID, Followers, Following);
-	}
 
 	for (i = 0; i < 10; i++)
 		if (Children[i])
@@ -97,9 +96,6 @@ struct node *init_node () {
 	return node;
 }
 
-/* node to collect incoming node data at the master */
-struct user_info gRxUInfo;
-
 /* Function to insert an element into a TRIE */
 struct node *insert (struct node *node, char *userid, int connection) {
 
@@ -111,8 +107,8 @@ struct node *insert (struct node *node, char *userid, int connection) {
 		}
 		/* If it is a master process, then we gather all the info */
 		if (!ID) {
-			/* Followers += gRxUInfo.followers; */
-			/* Following += gRxUInfo.following; */
+			/* Followers += gBufNode.followers; */
+			/* Following += gBufNode.following; */
 		}
 		/* If it is a slave process, we keep count of individual's statistics */
 		else {
@@ -204,69 +200,6 @@ void receive_input () {
 	}
 }
 
-/* Recursive function to send task data to master */
-char output[50];
-void send_output (struct node *node) {
-	int i;
-	
-	if (UInfo) {
-		sprintf (output, "%s %d %d", UID, Followers, Following);
-		MPI_Send (output, 50, MPI_UNSIGNED_CHAR, 0, 0, MPI_COMM_WORLD);
-	}
-
-	for (i = 0; i < 10; i++)
-		if (Children[i])
-			send_output (Children[i]);
-}
-
-/* Function to gather data at master from all nodes */
-int *done = 0;
-int all_done () {
-	int i, finished = 1;
-
-	if (!done) done = (int *) calloc (numtasks, sizeof (int));
-
-	for (i = 0; finished && i < numtasks; i++)
-		finished &= done[i];
-
-	return finished;
-}
-
-#define IS_DONE(i) done[i]
-#define DONE(i) (done[i] = 1)
-
-void receive_output () {
-	int i;
-	Head = init_node ();
-
-	/* Allocating space in buffer structure to hold names of incoming connections */
-	gRxUInfo.userid = (char *) malloc (20);
-
-	while (!all_done()) {
-		for (i = 1; i < 10; i++) {
-			if (IS_DONE(i)) continue;
-
-			MPI_Recv (output, 50, MPI_UNSIGNED_CHAR, i, 0, MPI_COMM_WORLD, &status);
-
-			if (!output[0]) {
-				int j;
-				DONE(i);
-				printf ("Done receiving output from task %d\n", i);
-				for (j = 0; j < numtasks; j++)
-					printf ("%d ", done[j]);
-				continue;
-			}
-
-			sscanf (output, "%s %d %d", gRxUInfo.userid, &gRxUInfo.followers, &gRxUInfo.following);
-
-			F_OUT ("Processing: %s from task %d\n", gRxUInfo.userid, i);
-
-			Head = insert (Head, name = gRxUInfo.userid, GATHER);
-		}
-	}
-
-}
-
 /* And so it begins... */
 int main (int argc, char **argv) {
 
@@ -280,16 +213,11 @@ int main (int argc, char **argv) {
 	/* MASTER */
 	if (!taskid) {
 		dispatch_input ();
-		receive_output ();
 	}
 
 	/* SLAVES */
 	else {
 		receive_input ();
-		send_output (Head);
-		/* Send Blank Line to mark end of transmission */
-		MPI_Send ("", 50, MPI_UNSIGNED_CHAR, 0, 0, MPI_COMM_WORLD);
-		printf ("Done sending output from task %d\n", ID);
 	}
 
 	task_close ();
