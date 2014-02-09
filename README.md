@@ -7,7 +7,7 @@ It is a very rudimentary statistics collecter that could have been done better, 
 
 The idea is very simple. The Stanford Network Analysis Project maintains a very rich collection of social networking data. I chose their Twitter dataset and tried to gather some basic statistics from it.
 
-The file contained ~45million lines, each containing 2 IDs. The IDs are anonymized user names, presented simply as 2 numbers. The first ID in a line indicates a User and the second ID indicates who he is following.
+The file contained ~2.5million lines, each containing 2 IDs. The IDs are anonymized user names, presented simply as 2 numbers. The first ID in a line indicates a User and the second ID indicates who he is following.
 
 This program is written using MPI for C and runs in a pseudo scatter-gather mechanism. For now, it is hardcoded to run on 1 master and 9 worker processes. Here is how it works:
 1. The master process reads data via stdin and dispatches them to the worker processes. 
